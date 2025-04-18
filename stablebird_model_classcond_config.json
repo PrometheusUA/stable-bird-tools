@@ -1,0 +1,145 @@
+{
+    "model_type": "diffusion_cond",
+    "sample_size": 441000,
+    "sample_rate": 44100,
+    "audio_channels": 2,
+    "model": {
+        "pretransform": {
+            "type": "autoencoder",
+            "iterate_batch": true,
+            "config": {
+                "encoder": {
+                    "type": "oobleck",
+                    "requires_grad": false,
+                    "config": {
+                        "in_channels": 2,
+                        "channels": 128,
+                        "c_mults": [1, 2, 4, 8, 16],
+                        "strides": [2, 4, 4, 8, 8],
+                        "latent_dim": 128,
+                        "use_snake": true
+                    }
+                },
+                "decoder": {
+                    "type": "oobleck",
+                    "config": {
+                        "out_channels": 2,
+                        "channels": 128,
+                        "c_mults": [1, 2, 4, 8, 16],
+                        "strides": [2, 4, 4, 8, 8],
+                        "latent_dim": 64,
+                        "use_snake": true,
+                        "final_tanh": false
+                    }
+                },
+                "bottleneck": {
+                    "type": "vae"
+                },
+                "latent_dim": 64,
+                "downsampling_ratio": 2048,
+                "io_channels": 2
+            }
+        },
+        "conditioning": {
+            "configs": [
+                {
+                    "id": "class",
+                    "type": "int",
+                    "config": {
+                        "min_val": 0,
+                        "max_val": 410,
+                        "requires_grad": true
+                    }
+                },
+                {
+                    "id": "seconds_start",
+                    "type": "number",
+                    "config": {
+                        "min_val": 0,
+                        "max_val": 512
+                    }
+                },
+                {
+                    "id": "seconds_total",
+                    "type": "number",
+                    "config": {
+                        "min_val": 0,
+                        "max_val": 512
+                    }
+                }
+            ],
+            "cond_dim": 768
+        },
+        "diffusion": {
+            "global_cond_ids": ["seconds_start", "seconds_total"],
+            "cross_attention_cond_ids": ["class"],
+            "type": "dit",
+            "config": {
+                "io_channels": 64,
+                "embed_dim": 1536,
+                "depth": 24,
+                "num_heads": 24,
+                "global_cond_dim": 1536,
+                "cond_token_dim": 768,
+                "project_cond_tokens": true,
+                "project_global_cond": true,
+                "transformer_type": "continuous_transformer"
+            }
+        },
+        "io_channels": 64
+    },
+    "training": {
+        "use_ema": true,
+        "log_loss_info": false,
+        "optimizer_configs": {
+            "diffusion": {
+                "optimizer": {
+                    "type": "AdamW",
+                    "config": {
+                        "lr": 0,
+                        "betas": [0.9, 0.999],
+                        "weight_decay": 0
+                    },
+                    "other_configs": [
+                        {
+                            "key": "class",
+                            "lr": 1e-3,
+                            "betas": [0.9, 0.999],
+                            "weight_decay": 0
+                        },
+                        {
+                            "key": "to_cond_embed",
+                            "lr": 3e-4,
+                            "betas": [0.9, 0.999],
+                            "weight_decay": 0
+                        },
+                        {
+                            "key": "cross_attn.to_kv.weight",
+                            "lr": 1e-3,
+                            "betas": [0.9, 0.999],
+                            "weight_decay": 0
+                        },
+                        {
+                            "key": "model.model.transformer.layers.2",
+                            "lr": 1e-5,
+                            "betas": [0.9, 0.999],
+                            "weight_decay": 0
+                        }
+                    ]
+                }
+            }
+        },
+        "demo": {
+            "demo_every": 100,
+            "demo_steps": 50,
+            "num_demos": 4,
+            "demo_cond": [
+                {"class": 28, "seconds_start": 0, "seconds_total": 12},
+                {"class": 87, "seconds_start": 0, "seconds_total": 20},
+                {"class": 5, "seconds_start": 0, "seconds_total": 10},
+                {"class": 200, "seconds_start": 0, "seconds_total": 10}
+            ],
+            "demo_cfg_scales": [3, 6, 9]
+        }
+    }
+}

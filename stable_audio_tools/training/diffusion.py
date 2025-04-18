@@ -302,7 +302,7 @@ class DiffusionCondTrainingWrapper(pl.LightningModule):
 
     def configure_optimizers(self):
         diffusion_opt_config = self.optimizer_configs['diffusion']
-        opt_diff = create_optimizer_from_config(diffusion_opt_config['optimizer'], self.diffusion.parameters())
+        opt_diff = create_optimizer_from_config(diffusion_opt_config['optimizer'], self.diffusion.named_parameters())
 
         if "scheduler" in diffusion_opt_config:
             sched_diff = create_scheduler_from_config(diffusion_opt_config['scheduler'], opt_diff)
@@ -396,6 +396,9 @@ class DiffusionCondTrainingWrapper(pl.LightningModule):
         elif self.diffusion_objective == "rectified_flow":
             targets = noise - diffusion_input
 
+        noised_inputs.requires_grad_()
+        noised_inputs.retain_grad()
+
         p.tick("noise")
 
         extra_args = {}
@@ -449,12 +452,25 @@ class DiffusionCondTrainingWrapper(pl.LightningModule):
 
         self.log_dict(log_dict, prog_bar=True, on_step=True)
         p.tick("log")
+        self.noised_inputs = noised_inputs
         #print(f"Profiler: {p}")
         return loss
 
     def on_before_zero_grad(self, *args, **kwargs):
         if self.diffusion_ema is not None:
             self.diffusion_ema.update()
+
+    def on_after_backward(self):
+        # import ipdb; ipdb.set_trace()
+        # print(f"Grad norm of the class embeddings integer embeddings is: {self.diffusion.conditioner.conditioners['class'].int_embedder.weight.grad.norm()}")
+        self.log(f"grad/cond_class_norm", self.diffusion.conditioner.conditioners['class'].int_embedder.weight.grad.norm(), prog_bar=True)
+        self.log(f"grad/cond_seconds_total_norm", self.diffusion.conditioner.conditioners['seconds_total'].embedder.embedding[0].weights.grad.norm(), prog_bar=False)
+        self.log(f"grad/cond_seconds_start_norm", self.diffusion.conditioner.conditioners['seconds_start'].embedder.embedding[0].weights.grad.norm(), prog_bar=False)
+
+        if self.noised_inputs is not None:
+            self.log("grad/input_norm", self.noised_inputs.grad.norm(), prog_bar=False)
+
+        # print(self.model.)
 
     def validation_step(self, batch, batch_idx):
 
@@ -833,7 +849,7 @@ class DiffusionCondInpaintTrainingWrapper(pl.LightningModule):
 
     def configure_optimizers(self):
         diffusion_opt_config = self.optimizer_configs['diffusion']
-        opt_diff = create_optimizer_from_config(diffusion_opt_config['optimizer'], self.diffusion.parameters())
+        opt_diff = create_optimizer_from_config(diffusion_opt_config['optimizer'], self.diffusion.named_parameters())
 
         if "scheduler" in diffusion_opt_config:
             sched_diff = create_scheduler_from_config(diffusion_opt_config['scheduler'], opt_diff)

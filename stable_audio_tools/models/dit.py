@@ -160,12 +160,16 @@ class DiffusionTransformer(nn.Module):
         return_info=False,
         **kwargs):
 
+        # print(f"DIT _forward: {global_embed.shape=}, {global_embed.shape=}")
+
         if cross_attn_cond is not None:
             cross_attn_cond = self.to_cond_embed(cross_attn_cond)
 
         if global_embed is not None:
             # Project the global conditioning to the embedding dimension
             global_embed = self.to_global_embed(global_embed)
+
+        # print(f"DIT _forward after projection: {global_embed.shape=}")
 
         prepend_inputs = None 
         prepend_mask = None
@@ -210,6 +214,8 @@ class DiffusionTransformer(nn.Module):
                 prepend_mask = torch.cat([prepend_mask, torch.ones((x.shape[0], 1), device=x.device, dtype=torch.bool)], dim=1)
 
             prepend_length = prepend_inputs.shape[1]
+
+            # print(f"DIT prepend global condition: {prepend_inputs.shape=}, {prepend_mask.shape=}")
 
         x = self.preprocess_conv(x) + x
 
@@ -264,6 +270,8 @@ class DiffusionTransformer(nn.Module):
         mask=None,
         return_info=False,
         **kwargs):
+
+        # print(f"DIT: {global_embed.shape=}")
 
         assert causal == False, "Causal mode is not supported for DiffusionTransformer"
 
@@ -330,6 +338,8 @@ class DiffusionTransformer(nn.Module):
                 batch_global_cond = torch.cat([global_embed, global_embed], dim=0)
             else:
                 batch_global_cond = None
+
+            # print(f"DIT CGF part: {batch_global_cond.shape=}")
 
             if input_concat_cond is not None:
                 batch_input_concat_cond = torch.cat([input_concat_cond, input_concat_cond], dim=0)

@@ -67,12 +67,18 @@ def copy_state_dict(model, state_dict):
         state_dict (OrderedDict): state_dict to load.
     """
     model_state_dict = model.state_dict()
+    copied_count = 0
     for key in state_dict:
-        if key in model_state_dict and state_dict[key].shape == model_state_dict[key].shape:
+        if key in model_state_dict and state_dict[key].shape == model_state_dict[key].shape and "class" not in key:
             if isinstance(state_dict[key], torch.nn.Parameter):
                 # backwards compatibility for serialized parameters
                 state_dict[key] = state_dict[key].data
             model_state_dict[key] = state_dict[key]
+            copied_count += 1
+        else:
+            print(f"Key {key} is not found during key matching")
+    
+    print(f"Copied {copied_count} modules state dicts from pretrained (that had {len(state_dict)} modules)")
 
     model.load_state_dict(model_state_dict, strict=False)
 
@@ -88,13 +94,48 @@ def create_optimizer_from_config(optimizer_config, parameters):
     """
 
     optimizer_type = optimizer_config["type"]
-
-    if optimizer_type == "FusedAdam":
-        from deepspeed.ops.adam import FusedAdam
-        optimizer = FusedAdam(parameters, **optimizer_config["config"])
+    other_configs = optimizer_config.get('other_configs', [])
+    if len(other_configs) == 0:
+        parameters = [param for _, param in parameters]
+        if optimizer_type == "FusedAdam":
+            from deepspeed.ops.adam import FusedAdam
+            optimizer = FusedAdam(parameters, **optimizer_config["config"])
+        else:
+            optimizer_fn = getattr(torch.optim, optimizer_type)
+            optimizer = optimizer_fn(parameters, **optimizer_config["config"])
     else:
-        optimizer_fn = getattr(torch.optim, optimizer_type)
-        optimizer = optimizer_fn(parameters, **optimizer_config["config"])
+        print("Other configs are present")
+        all_configs = {
+            'main': optimizer_config["config"]
+        }
+        for config in other_configs:
+            key = config['key']
+            config.pop('key')
+            all_configs[key] = config
+        
+        for key, config in all_configs.items():
+            config['params'] = []
+            all_configs[key] = config
+
+        for name, param in parameters:
+            found_loc = False
+            for key in all_configs.keys():
+                if key in name:
+                    found_loc = True
+                    all_configs[key]['params'].append(param)
+                    break
+            if not found_loc:
+                all_configs['main']['params'].append(param)
+        
+        print("Adding optimizer configs")
+        optimizer_configs = list(all_configs.values())
+        if optimizer_type == "FusedAdam":
+            from deepspeed.ops.adam import FusedAdam
+            optimizer = FusedAdam(optimizer_configs)
+        else:
+            optimizer_fn = getattr(torch.optim, optimizer_type)
+            optimizer = optimizer_fn(optimizer_configs)
+
     return optimizer
 
 def create_scheduler_from_config(scheduler_config, optimizer):

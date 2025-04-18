@@ -4,6 +4,7 @@ import torch
 import logging, warnings
 import string
 import typing as tp
+import numpy as np
 import gc
 
 from .adp import NumberEmbedder
@@ -37,13 +38,27 @@ class IntConditioner(Conditioner):
     def __init__(self, 
                 output_dim: int,
                 min_val: int=0,
-                max_val: int=512
+                max_val: int=512,
+                weights_init_file: tp.Optional[str]=None,
+                requires_grad: bool=True
                 ):
         super().__init__(output_dim, output_dim)
 
         self.min_val = min_val
         self.max_val = max_val
-        self.int_embedder = nn.Embedding(max_val - min_val + 1, output_dim).requires_grad_(True)
+        self.int_embedder = nn.Embedding(max_val - min_val + 1, output_dim).requires_grad_(requires_grad)
+        if weights_init_file is not None:
+            print("Loading classes embeddings")
+            with open(weights_init_file, 'rb') as f:
+                pretrained_weights_np = np.load(f)
+            pretrained_weights = torch.tensor(pretrained_weights_np)
+            assert pretrained_weights.shape[0] == max_val - min_val + 1, f"There are {pretrained_weights.shape[0]} classes in pretrained weights and {max_val - min_val + 1} should be specified"
+            if pretrained_weights.shape[1] > output_dim:
+                print(f"Truncating embeddings to the first {output_dim} of them")
+                pretrained_weights = pretrained_weights[:, :output_dim]
+            elif pretrained_weights.shape[1] < output_dim:
+                raise Exception("Loaded weights have lower dimension relative to the specified")
+            self.int_embedder.weight = nn.Parameter(pretrained_weights)
 
     def forward(self, ints: tp.List[int], device=None) -> tp.Any:
             
@@ -111,6 +126,55 @@ class ListConditioner(Conditioner):
         int_embeds = self.embedder(ints).unsqueeze(1) # shape [batch_size, 1, output_dim]
 
         return [int_embeds, torch.ones(int_embeds.shape[0], 1).to(device)]
+
+class MultiLabelConditioner(Conditioner):
+    def __init__(
+        self,
+        output_dim: int,
+        options: tp.List[str],
+        main_weight: float = 1.0,
+        secondary_weight: float = 0.5,
+    ):
+        super().__init__(output_dim, output_dim)
+        self.options = options
+        self.embedder = nn.Embedding(len(options) + 1, output_dim).requires_grad_(True)
+        self.main_weight = main_weight
+        self.secondary_weight = secondary_weight
+
+    def label_to_index(self, label):
+        # Convert main and secondary labels to indices
+        return self.options.index(label) + 1 if label in self.options else 0
+
+    def forward(
+        self, main_labels: tp.List[str], secondary_labels: tp.List[tp.List[str]], device=None
+    ) -> tp.Any:
+        main_idxs = torch.tensor([self.label_to_index(l) for l in main_labels], device=device)  # [B]
+        main_embeds = self.embedder(main_idxs).unsqueeze(1) * self.main_weight  # [B, 1, D]
+
+        sec_idxs = [
+            torch.tensor([self.label_to_index(l) for l in lbls], device=device)
+            if len(lbls) > 0 else torch.tensor([0], device=device)
+            for lbls in secondary_labels
+        ]
+
+        # Pad secondary to the max length
+        padded_sec = nn.utils.rnn.pad_sequence(sec_idxs, batch_first=True, padding_value=0)  # [B, S]
+        sec_embeds = self.embedder(padded_sec)  # [B, S, D]
+
+        sec_mask = (padded_sec != 0).unsqueeze(-1).float()  # [B, S, 1]
+        sec_embeds_weighted = sec_embeds * sec_mask
+
+        if sec_mask.sum() > 0:
+            pooled_sec = sec_embeds_weighted.sum(dim=1) / (sec_mask.sum(dim=1) + 1e-6)  # [B, D]
+        else:
+            pooled_sec = torch.zeros_like(main_embeds[:, 0])
+
+        pooled_sec = pooled_sec.unsqueeze(1) * self.secondary_weight  # [B, 1, D]
+
+        combined = main_embeds + pooled_sec  # [B, 1, D]
+
+        return [combined, torch.ones(combined.shape[0], 1, device=device)]
+
 
 class CLAPTextConditioner(Conditioner):
     def __init__(self, 
@@ -711,6 +775,8 @@ def create_multi_conditioner_from_conditioning_config(config: tp.Dict[str, tp.An
             conditioners[id] = NumberConditioner(**conditioner_config)
         elif conditioner_type == "list":
             conditioners[id] = ListConditioner(**conditioner_config)
+        elif conditioner_type == "multilabel":
+            conditioners[id] = MultiLabelConditioner(**conditioner_config)
         elif conditioner_type == "phoneme":
             conditioners[id] = PhonemeConditioner(**conditioner_config)
         elif conditioner_type == "lut":

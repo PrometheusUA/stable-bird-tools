@@ -1,0 +1,11 @@
+{
+    "dataset_type": "audio_dir",
+    "datasets": [
+        {
+            "id": "finetune_data",
+            "path": "/home/jovyan/bird-sound-generation/data/datasets/birdset_m_denoised/finetune/",
+            "custom_metadata_module": "/home/jovyan/stable-audio-tools/stablebird_classcond_metadata.py"
+        }
+    ],
+    "random_crop": true
+}

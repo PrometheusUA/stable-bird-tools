@@ -724,6 +724,8 @@ class TransformerBlock(nn.Module):
             rotary_pos_emb = self.rope.forward_from_seq_len(x.shape[-2])
 
         if self.global_cond_dim is not None and self.global_cond_dim > 0 and global_cond is not None:
+
+            # print(f"Transformer Block: global condition usage {self.global_cond_dim=}, {global_cond.shape=}")
             
             scale_self, shift_self, gate_self, scale_ff, shift_ff, gate_ff = (self.to_scale_shift_gate + global_cond).unsqueeze(1).chunk(6, dim=-1)
 
@@ -848,6 +850,8 @@ class ContinuousTransformer(nn.Module):
     ):
         batch, seq, device = *x.shape[:2], x.device
 
+        # print(f"Continuous transformer: {global_cond.shape=}")
+
         model_dtype = next(self.parameters()).dtype
         x = x.to(model_dtype)
 
@@ -862,7 +866,11 @@ class ContinuousTransformer(nn.Module):
 
             assert prepend_dim == x.shape[-1], 'prepend dimension must match sequence dimension'
 
+            # print(f"Cont Transf: x before concat {x.shape=}")
+
             x = torch.cat((prepend_embeds, x), dim = -2)
+
+            # print(f"Cont Transf: concatted to x, {x.shape=}")
 
             if prepend_mask is not None or mask is not None:
                 mask = mask if mask is not None else torch.ones((batch, seq), device = device, dtype = torch.bool)
@@ -882,6 +890,8 @@ class ContinuousTransformer(nn.Module):
 
         if global_cond is not None and self.global_cond_embedder is not None:
             global_cond = self.global_cond_embedder(global_cond)
+
+        # print(f"Cont Transf: {global_cond.shape=}")
 
         # Iterate over the transformer layers
         for layer in self.layers:
