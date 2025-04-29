@@ -47,7 +47,7 @@
                     "type": "int",
                     "config": {
                         "min_val": 0,
-                        "max_val": 410,
+                        "max_val": 58,
                         "requires_grad": true
                     }
                 },
@@ -122,10 +122,10 @@
             "demo_steps": 50,
             "num_demos": 4,
             "demo_cond": [
-                {"class": 28, "seconds_start": 0, "seconds_total": 12},
-                {"class": 87, "seconds_start": 0, "seconds_total": 20},
-                {"class": 5, "seconds_start": 0, "seconds_total": 10},
-                {"class": 200, "seconds_start": 0, "seconds_total": 10}
+                {"class": 0, "seconds_start": 0, "seconds_total": 12},
+                {"class": 1, "seconds_start": 0, "seconds_total": 20},
+                {"class": 2, "seconds_start": 0, "seconds_total": 10},
+                {"class": 3, "seconds_start": 0, "seconds_total": 12}
             ],
             "demo_cfg_scales": [3, 6, 9]
         }

@@ -84,7 +84,7 @@ def sample_discrete_euler(model, x, steps, sigma_max=1, callback=None, dist_shif
 
     #alphas, sigmas = 1-t, t
 
-    for i, (t_curr, t_prev) in enumerate(tqdm(zip(t[:-1], t[1:]))):
+    for i, (t_curr, t_prev) in enumerate(tqdm(zip(t[:-1], t[1:]), leave=False)):
         # Broadcast the current timestep to the correct shape
         t_curr_tensor = t_curr * torch.ones(
             (x.shape[0],), dtype=x.dtype, device=x.device
@@ -115,7 +115,7 @@ def sample_rk4(model, x, steps, sigma_max=1, callback=None, dist_shift=None, **e
 
     #alphas, sigmas = 1-t, t
 
-    for i, (t_curr, t_prev) in enumerate(tqdm(zip(t[:-1], t[1:]))):
+    for i, (t_curr, t_prev) in enumerate(tqdm(zip(t[:-1], t[1:]), leave=False)):
         # Broadcast the current timestep to the correct shape
         t_curr_tensor = t_curr * ts
         dt = t_prev - t_curr  # we solve backwards in our formulation
@@ -151,7 +151,7 @@ def sample_flow_dpmpp(model, x, steps, sigma_max=1, callback=None, dist_shift=No
 
     log_snr = lambda t: ((1-t) / t).log()
 
-    for i in trange(len(t) - 1, disable=False):
+    for i in trange(len(t) - 1, disable=False, leave=False):
         denoised = x - t[i] * model(x, t[i] * ts, **extra_args)
         if callback is not None:
             callback({'x': x, 'i': i, 'sigma': t[i], 'sigma_hat': t[i], 'denoised': denoised})
@@ -183,7 +183,7 @@ def sample(model, x, steps, eta, callback=None, sigma_max=1.0, dist_shift=None, 
     alphas, sigmas = get_alphas_sigmas(t)
 
     # The sampling loop
-    for i in trange(steps):
+    for i in trange(steps, leave=False):
 
         if cfg_pp:
             # Get the model output (v, the predicted velocity)

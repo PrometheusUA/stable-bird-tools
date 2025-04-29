@@ -1,0 +1,11 @@
+{
+    "dataset_type": "audio_dir",
+    "datasets": [
+        {
+            "id": "train_data",
+            "path": "/home/jovyan/data/datasets/birdset_m_denoised/train_only/",
+            "custom_metadata_module": "/home/jovyan/stable-bird-tools/stablebird_textprompt_metadata.py"
+        }
+    ],
+    "random_crop": true
+}

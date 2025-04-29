@@ -43,12 +43,11 @@
         "conditioning": {
             "configs": [
                 {
-                    "id": "class",
-                    "type": "int",
+                    "id": "prompt",
+                    "type": "t5",
                     "config": {
-                        "min_val": 0,
-                        "max_val": 410,
-                        "requires_grad": true
+                        "t5_model_name": "t5-base",
+                        "max_length": 256
                     }
                 },
                 {
@@ -71,18 +70,17 @@
             "cond_dim": 768
         },
         "diffusion": {
+            "cross_attention_cond_ids": ["prompt", "seconds_start", "seconds_total"],
             "global_cond_ids": ["seconds_start", "seconds_total"],
-            "cross_attention_cond_ids": ["class"],
             "type": "dit",
             "config": {
                 "io_channels": 64,
                 "embed_dim": 1536,
                 "depth": 24,
                 "num_heads": 24,
-                "global_cond_dim": 1536,
                 "cond_token_dim": 768,
-                "project_cond_tokens": true,
-                "project_global_cond": true,
+                "global_cond_dim": 1536,
+                "project_cond_tokens": false,
                 "transformer_type": "continuous_transformer"
             }
         },
@@ -96,20 +94,14 @@
                 "optimizer": {
                     "type": "AdamW",
                     "config": {
-                        "lr": 3e-5,
+                        "lr": 1e-5,
                         "betas": [0.9, 0.999],
                         "weight_decay": 0
                     },
                     "other_configs": [
                         {
-                            "key": "class",
-                            "lr": 1e-4,
-                            "betas": [0.9, 0.999],
-                            "weight_decay": 0
-                        },
-                        {
                             "key": "to_cond_embed",
-                            "lr": 1e-4,
+                            "lr": 3e-5,
                             "betas": [0.9, 0.999],
                             "weight_decay": 0
                         }
@@ -118,14 +110,14 @@
             }
         },
         "demo": {
-            "demo_every": 100,
+            "demo_every": 50,
             "demo_steps": 50,
             "num_demos": 4,
             "demo_cond": [
-                {"class": 28, "seconds_start": 0, "seconds_total": 12},
-                {"class": 87, "seconds_start": 0, "seconds_total": 20},
-                {"class": 5, "seconds_start": 0, "seconds_total": 10},
-                {"class": 200, "seconds_start": 0, "seconds_total": 10}
+                {"prompt": "The audio clip features a bird song characterized by a series of high-pitched chirps and trills. The chirps are short in duration, while the trills are more complex and sustained. The frequency is relatively high, contributing to the bright and clear sound. The song consists of a combination of chirps and trills, creating a simple but recognizable pattern. Based on the audio, the most similar non-bird sounds are a buzzing insect, a gentle breeze, a soft, flowing stream, and a distant, muffled sound of a vehicle.", "seconds_start": 0, "seconds_total": 12},
+                {"prompt": "The audio clip features a bird song characterized by a series of high-pitched chirps and trills. The chirps are short and staccato-like, while the trills are longer and more sustained, creating a complex melodic pattern. The song appears to be composed of a series of distinct notes, creating a relatively high frequency of sound events. The most similar non-bird sounds are squeaking, hissing, whistling, and squealing.", "seconds_start": 0, "seconds_total": 20},
+                {"prompt": "The audio clip features a bird song characterized by a series of short, high-pitched chirps and trills. The chirps are relatively short in duration, and the trills are more complex, consisting of rapid sequences of notes. The overall impression is that of a single bird vocalizing, with no other distinct bird sounds or background noises clearly audible. The bird song is the dominant sound in the clip. The most similar non-bird sounds are a squeaky toy, a small motor running at high speed, and a squeaky toy.", "seconds_start": 0, "seconds_total": 10},
+                {"prompt": "The audio clip features a bird song characterized by a series of short, high-pitched chirps and trills. The chirps are brief, and the trills are more extended, creating a repeating pattern. The song is predominantly high-frequency, with a rapid succession of sounds. The most similar non-bird sounds are a ticking clock, a dripping faucet, a buzzing insect, and a gentle breeze through leaves.", "seconds_start": 0, "seconds_total": 10}
             ],
             "demo_cfg_scales": [3, 6, 9]
         }

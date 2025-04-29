@@ -1,0 +1,11 @@
+{
+    "dataset_type": "audio_dir",
+    "datasets": [
+        {
+            "id": "finetune_data",
+            "path": "/home/jovyan/data/datasets/birdclef_rare/finetune/",
+            "custom_metadata_module": "/home/jovyan/stable-bird-tools/stablebird_classcond_rare_metadata.py"
+        }
+    ],
+    "random_crop": true
+}

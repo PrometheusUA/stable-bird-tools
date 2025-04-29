@@ -69,7 +69,7 @@ def copy_state_dict(model, state_dict):
     model_state_dict = model.state_dict()
     copied_count = 0
     for key in state_dict:
-        if key in model_state_dict and state_dict[key].shape == model_state_dict[key].shape and "class" not in key:
+        if key in model_state_dict and state_dict[key].shape == model_state_dict[key].shape:
             if isinstance(state_dict[key], torch.nn.Parameter):
                 # backwards compatibility for serialized parameters
                 state_dict[key] = state_dict[key].data

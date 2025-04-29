@@ -408,11 +408,14 @@ birdset_ID2CLASS = [
     "amecro",
     "cedwax",
     "yefcan",
-    "reblei",
-    "melthr"
+    # "reblei",
+    # "melthr"
 ]
 
 rare_ID2CLASS = ['blchaw1', 'bobher1', 'neocor', 'palhor2', 'bicwre1', 'brtpar1', 'olipic1', 'yelori1', 'piwtyr1', 'grepot1', 'crbtan1', 'labter1', 'shghum1', 'rufmot1', 'sahpar1', 'woosto', 'royfly1', 'bubcur1', 'rutpuf1', 'whmtyr1', 'amakin1', 'rubsee1', 'plctan1', 'cregua1', 'yectyr1', 'blkvul', 'yehbla2', 'recwoo1', 'grasal4', 'spepar1', 'cinbec1', 'fotfly', 'ampkin1', 'piepuf1', 'crebob1', 'shtfly1', 'bucmot3', 'blctit1', 'plukit1', 'cocher1', 'cargra1', 'tbsfin1', 'anhing', 'rebbla1', 'whwswa1', 'thlsch3', 'spbwoo1', 'verfly', 'rosspo1', 'savhaw1', 'ruther1', 'grysee1', 'turvul', 'norscr1', 'bafibi1', 'gretin1', 'colara1', 'ragmac1', 'whttro1']
+
+taxonomy_path = '/home/jovyan/data/eBird_Taxonomy_v2021.csv'
+classes_descriptions_path = '/home/jovyan/classes_descriptions_birdclef.csv'
 
 
 import os
@@ -423,16 +426,22 @@ from glob import glob
 import torch
 import soundfile as sf
 import numpy as np
+import pandas as pd
 import librosa
 
 from tqdm import tqdm
 from stable_audio_tools.interface.gradio import load_model
 from stable_audio_tools.inference.generation import generate_diffusion_cond
 
-for STEPS, CFG_SCALE in [(200, 3)]:
-    CONFIG_PATH = '/home/jovyan/stable-bird-tools/stablebird_model_classcond_rare_finetune_config.json'
-    CKPT_PATH = '/home/jovyan/stable-bird-tools/stablebird_unwrap_2100_after650_after3250_after250.ckpt'
-    OUT_PATH = f'/home/jovyan/samples/stablebird_unwrap_2100_after650_after3250_after250_cfg{CFG_SCALE}_{STEPS}steps_additional/'
+
+# taxonomy_df = pd.read_csv(taxonomy_path)
+classes_descs_df = pd.read_csv(classes_descriptions_path)
+print(f"Loaded {len(classes_descs_df)} descriptions")
+
+for STEPS, CFG_SCALE in [(50, 6)]:
+    CONFIG_PATH = '/home/jovyan/stable-bird-tools/stablebird_model_textprompt_finetune_config.json'
+    CKPT_PATH = '/home/jovyan/stable-bird-tools/stablebird_text_2500_after500.ckpt'
+    OUT_PATH = f'/home/jovyan/samples/stablebird_text_2500_after500_cfg{CFG_SCALE}_{STEPS}steps_rare/'
     SAMPLES_PERCLASS = 50
     CLASSES_BATCH = 5
     ID2CLASS = rare_ID2CLASS
@@ -454,6 +463,7 @@ for STEPS, CFG_SCALE in [(200, 3)]:
         print(f"Found {len(init_audios)} possible audios for init")
 
     if USE_INIT_AUDIO and len(init_audios) > 0:
+        raise NotImplementedError("init audio not ready for text inference")
         if INIT_AUDIO_APPROACH == 'classes_dict':
             assert os.path.exists(CLASSES_DICT_PATH)
 
@@ -502,10 +512,25 @@ for STEPS, CFG_SCALE in [(200, 3)]:
         for start_class_id in tqdm(range(0, len(ID2CLASS), CLASSES_BATCH), desc='Audio classes batch'):
             classnames = ID2CLASS[start_class_id:start_class_id+CLASSES_BATCH]
 
+            last_species_dir = os.path.join(OUT_PATH, classnames[-1])
+            if os.path.exists(last_species_dir) and (len(os.listdir(last_species_dir)) >= SAMPLES_PERCLASS):
+                print(f"Skipping batch because all is generated already")
+                continue
+
+            conditioning_dicts = []
+            for class_id in range(start_class_id, min(start_class_id + CLASSES_BATCH, len(ID2CLASS))):
+                classname = classnames[class_id - start_class_id]
+                specie_prompts_df = classes_descs_df.loc[classes_descs_df['specie'] == classname, 'response']
+                conditioning_dicts.extend([{
+                    "prompt": specie_prompts_df.sample().iloc[0],
+                    "seconds_start": 0, 
+                    "seconds_total": 10.
+                } for _ in range(SAMPLES_PERCLASS)])
+
             gen = generate_diffusion_cond(model, 
                     steps = STEPS,
                     cfg_scale=CFG_SCALE,
-                    conditioning = [sample_dict for class_id in range(start_class_id, min(start_class_id + CLASSES_BATCH, len(ID2CLASS))) for sample_dict in ([{"class": class_id, "seconds_start": 0, "seconds_total": 10.}] * SAMPLES_PERCLASS)],
+                    conditioning = conditioning_dicts,  # [sample_dict for class_id in range(start_class_id, min(start_class_id + CLASSES_BATCH, len(ID2CLASS))) for sample_dict in ([{"class": class_id, "seconds_start": 0, "seconds_total": 10.}] * SAMPLES_PERCLASS)],
                     batch_size = SAMPLES_PERCLASS*len(classnames),
                     sample_size=441000,
                     sample_rate=44100,
