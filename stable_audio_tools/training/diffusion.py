@@ -464,7 +464,13 @@ class DiffusionCondTrainingWrapper(pl.LightningModule):
         # import ipdb; ipdb.set_trace()
         # print(f"Grad norm of the class embeddings integer embeddings is: {self.diffusion.conditioner.conditioners['class'].int_embedder.weight.grad.norm()}")
         if 'class' in self.diffusion.conditioner.conditioners:
-            self.log(f"grad/cond_class_norm", self.diffusion.conditioner.conditioners['class'].int_embedder.weight.grad.norm(), prog_bar=True)
+            try:
+                self.log(f"grad/cond_class_norm", self.diffusion.conditioner.conditioners['class'].int_embedder.weight.grad.norm(), prog_bar=True)
+            except AttributeError:
+                try:
+                    self.log(f"grad/cond_class_norm", self.diffusion.conditioner.conditioners['class'].embedder.weight.grad.norm(), prog_bar=True)
+                except:
+                    pass
         # else:
         #     self.log(f"grad/cond_class_norm", self.diffusion.conditioner.conditioners['prompt'].proj_out.weight.grad.norm(), prog_bar=True)
         self.log(f"grad/cond_seconds_total_norm", self.diffusion.conditioner.conditioners['seconds_total'].embedder.embedding[0].weights.grad.norm(), prog_bar=False)

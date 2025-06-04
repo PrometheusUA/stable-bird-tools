@@ -146,8 +146,11 @@ class MultiLabelConditioner(Conditioner):
         return self.options.index(label) + 1 if label in self.options else 0
 
     def forward(
-        self, main_labels: tp.List[str], secondary_labels: tp.List[tp.List[str]], device=None
+        self, all_labels: tp.List[str], device=None
     ) -> tp.Any:
+        # print(f"{all_labels=}")
+        main_labels = [labels[0] for labels in all_labels]
+        secondary_labels = [labels[1] for labels in all_labels]
         main_idxs = torch.tensor([self.label_to_index(l) for l in main_labels], device=device)  # [B]
         main_embeds = self.embedder(main_idxs).unsqueeze(1) * self.main_weight  # [B, 1, D]
 
@@ -175,6 +178,119 @@ class MultiLabelConditioner(Conditioner):
 
         return [combined, torch.ones(combined.shape[0], 1, device=device)]
 
+
+# class MultiLabelSequenceConditioner(Conditioner):
+#     def __init__(
+#         self,
+#         output_dim: int,
+#         options: tp.List[str],
+#     ):
+#         super().__init__(output_dim, output_dim)
+#         self.options = options
+#         self.embedder = nn.Embedding(len(options) + 1, output_dim).requires_grad_(True)
+
+#     def label_to_index(self, label):
+#         # Convert main and secondary labels to indices
+#         return self.options.index(label) + 1 if label in self.options else 0
+
+#     def forward(
+#         self, all_labels: tp.List[str], device=None
+#     ) -> tp.Any:
+#         main_labels = [labels[0] for labels in all_labels]
+#         secondary_labels = [labels[1] for labels in all_labels]
+#         main_idxs = torch.tensor([self.label_to_index(l) for l in main_labels], device=device)  # [B]
+#         main_embeds = self.embedder(main_idxs).unsqueeze(1)  # [B, 1, D]
+
+#         sec_idxs = [
+#             torch.tensor([self.label_to_index(l) for l in lbls], device=device)
+#             if len(lbls) > 0 else torch.tensor([0], device=device)
+#             for lbls in secondary_labels
+#         ]
+
+#         # shuffle each secondary labels list
+#         sec_idxs = [
+#             x[torch.randperm(x.size(0))] for x in sec_idxs
+#         ]
+
+#         # Pad secondary to the max length
+#         padded_sec = nn.utils.rnn.pad_sequence(sec_idxs, batch_first=True, padding_value=0)  # [B, S]
+#         sec_embeds = self.embedder(padded_sec)  # [B, S, D]
+
+#         sec_mask = (padded_sec != 0).unsqueeze(-1).float()  # [B, S, 1], possible bug with zero class
+#         sec_embeds_weighted = sec_embeds * sec_mask
+
+#         combined = torch.cat((main_embeds, sec_embeds_weighted), dim=1)  # [B, S + 1, D]
+
+#         return [combined, torch.ones(combined.shape[0], 1, device=device)]
+
+
+class MultiLabelSequenceConditioner(nn.Module):
+    def __init__(
+        self,
+        output_dim: int,
+        options: tp.List[str],
+        max_secondary_labels: int = 5,
+    ):
+        super().__init__()
+        self.output_dim = output_dim
+        self.options = options
+        self.index_map = {label: i + 1 for i, label in enumerate(options)}  # 0 is padding/unknown
+        self.max_secondary_labels = max_secondary_labels
+        self.num_classes = len(options) + 1
+
+        self.embedder = nn.Embedding(self.num_classes, output_dim)
+        self.role_embedding = nn.Embedding(2, output_dim)
+
+    def label_to_index(self, label: str) -> int:
+        return self.index_map.get(label, 0)
+
+    def forward(
+        self,
+        all_labels: tp.List[tp.Tuple[str, tp.List[str]]],
+        device=None
+    ):
+        device = device or next(self.parameters()).device
+        B = len(all_labels)
+
+        # Main labels
+        main_labels = [labels[0] for labels in all_labels]
+        main_indices = torch.tensor([self.label_to_index(l) for l in main_labels], device=device)
+        main_embeds = self.embedder(main_indices).unsqueeze(1)  # [B, 1, D]
+
+        # Secondary labels
+        secondary_lists = [labels[1] for labels in all_labels]
+        sec_indices = [
+            torch.tensor([self.label_to_index(lbl) for lbl in lbls], device=device)
+            if lbls else torch.tensor([], dtype=torch.long, device=device)
+            for lbls in secondary_lists
+        ]
+        sec_indices = [
+            x[torch.randperm(len(x))] if len(x) > 1 else x for x in sec_indices
+        ]
+        # Pad/truncate
+        padded = nn.utils.rnn.pad_sequence(
+            sec_indices, batch_first=True, padding_value=0
+        )
+        padded = padded[:, :self.max_secondary_labels]
+        # if padded.shape[1] < self.max_secondary_labels:
+        #     pad_width = self.max_secondary_labels - padded.shape[1]
+        #     padded = nn.functional.pad(padded, (0, 0, 0, pad_width), value=0)
+
+        sec_mask = (padded != 0).unsqueeze(-1).float()  # [B, S, 1]
+        sec_embeds = self.embedder(padded) * sec_mask  # [B, S, D]
+
+        # Combine
+        combined = torch.cat([main_embeds, sec_embeds], dim=1)  # [B, 1 + S, D]
+
+        role_ids = torch.cat([
+            torch.zeros((B, 1), dtype=torch.long, device=device),  # main
+            torch.ones((B, combined.size(1) - 1), dtype=torch.long, device=device)  # secondary
+        ], dim=1)  # [B, 1 + S]
+
+        role_embeds = self.role_embedding(role_ids)  # [B, 1 + S, D]
+        combined += role_embeds
+
+        return [combined, torch.ones(B, 1, device=device)]
 
 class CLAPTextConditioner(Conditioner):
     def __init__(self, 
@@ -724,7 +840,7 @@ class MultiConditioner(nn.Module):
                         raise ValueError(f"Conditioner key {condition_key} not found in batch metadata")
 
                 #Unwrap the condition info if it's a single-element list or tuple, this is to support collation functions that wrap everything in a list
-                if isinstance(x[condition_key], list) or isinstance(x[condition_key], tuple) and len(x[condition_key]) == 1:
+                if (isinstance(x[condition_key], list) or isinstance(x[condition_key], tuple)) and len(x[condition_key]) == 1:
                     conditioner_input = x[condition_key][0]
                     
                 else:
@@ -777,6 +893,8 @@ def create_multi_conditioner_from_conditioning_config(config: tp.Dict[str, tp.An
             conditioners[id] = ListConditioner(**conditioner_config)
         elif conditioner_type == "multilabel":
             conditioners[id] = MultiLabelConditioner(**conditioner_config)
+        elif conditioner_type == 'multilabel_seq':
+            conditioners[id] = MultiLabelSequenceConditioner(**conditioner_config)
         elif conditioner_type == "phoneme":
             conditioners[id] = PhonemeConditioner(**conditioner_config)
         elif conditioner_type == "lut":
